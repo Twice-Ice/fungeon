@@ -1,15 +1,15 @@
 import pygame
 from pygame import Vector2
 from particles import ParticleEmitter
-from globals import FPS, SCREEN_SIZE
+import globals as gb
 pygame.init()
 
 doExit = False
 clock = pygame.time.Clock()
-screen = pygame.display.set_mode(SCREEN_SIZE)
+screen = pygame.display.set_mode(gb.SCREEN_SIZE)
 
 fireFade = ParticleEmitter(
-	pos = Vector2(SCREEN_SIZE)//2,
+	pos = Vector2(gb.SCREEN_SIZE)//2,
 	updateAttributes = [
 		["dragOverLife", [.15, .2, .2, .2, .5, 1, 5]],
 		["sizeOverVelo", [6.5, [5, 6, 7, 8, 9, 9]]],
@@ -56,11 +56,11 @@ transLight = ParticleEmitter(
 	],
 	initAttributes = [
 		["randAngle"],
-		["moveOnAngle", 20]
+		["moveOnAngle", 35]
 	],
 	particleLifetime = 250,
 	maxParticles = 1000,
-	ppf = 10,
+	ppf = 5,
 )
 
 snow = ParticleEmitter(
@@ -119,7 +119,7 @@ testEmitter = ParticleEmitter(
 )
 
 while not doExit:
-	delta = clock.tick(FPS) / 1000
+	delta = clock.tick(gb.FPS) / 1000
 	for event in pygame.event.get():
 		if event.type == pygame.QUIT:
 			doExit = True #lets you quit parogram

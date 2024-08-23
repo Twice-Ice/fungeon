@@ -2,7 +2,7 @@ import pygame
 import math
 import random
 from pygame import Vector2, Rect
-from globals import SCREEN_SIZE, SCREEN_RECT
+import globals as gb
 
 def randfloat(min, max):
 	#gets the correct scaling to handle with random values. This allows for ranges of .0005 to .01 for example.
@@ -74,7 +74,7 @@ class Particle:
 		self.velo += velo #adds the velo of the emitter.
 		self.applyAttributes(attributes) #applies attributes.
 		self.updatePos() #updates the position of the particle based on self.velo.
-		self.draw(screen) #draws the particle to the screen.
+		# self.draw(screen) #draws the particle to the screen.
 
 	'''
 	applies the attributes to the particle based on the list inputed to this function.
@@ -733,7 +733,7 @@ class Particle:
 	def dragOverLife(self, dragRange):
 		if type(dragRange) != list: TypeError(f"dragRange != list, type(dragRange) == {type(dragRange)}")
 		dragPercent = 1 - self.time/self.lifetime
-		currentDrag = dragRange[int((dragPercent - dragPercent % (100/len(dragRange)/100))//(100/len(dragRange)/100))]
+		currentDrag = dragRange[int(gb.halfRound(dragPercent - dragPercent % (100/len(dragRange)/100), 2)//(100/len(dragRange)/100))]
 		self.drag(currentDrag)
 
 class ParticleEmitter:
@@ -743,6 +743,8 @@ class ParticleEmitter:
 	'''
 	def __init__(self, pos = Vector2(0, 0), updateAttributes : list = [["randXVelo", 5], ["gravity", .25], ["colorOverLife", [(255, 255, 255), (255, 255, 255), (0, 0, 0)]]], initAttributes : list = [], maxParticles : int = 100, ppf : float = 1, particleLifetime : int = 100, color : tuple = (255, 255, 255), size : float = 10, maxVelo = Vector2(100, 150), maxVeloAdjust = 5, cull : bool = True, veloType : str = "avg", spawnOnMove = False, spawnType = "default", ppfMaxVelo : int = None): #ppf = particles per frame
 		self.pos = pos
+		self.newPos = pos
+		self.oldPos = pos
 		self.maxParticles = maxParticles
 		self.particleList = []
 		self.basePpf = ppf
@@ -754,6 +756,8 @@ class ParticleEmitter:
 		self.updateAttributes = updateAttributes
 		self.initAttributes = initAttributes
 		self.size = size
+		self.newVelo = Vector2(0, 0)
+		self.oldVelo = Vector2(0, 0)
 		self.veloType = veloType
 		self.spawnOnMove = spawnOnMove
 		self.spawnType = spawnType
@@ -785,11 +789,16 @@ class ParticleEmitter:
 	Updates the emitter and every particle from the emitter. 
 	'''
 	def update(self, screen, delta : int = 1, pos = None, velo : Vector2 = Vector2(0, 0)):
-		'''if the particle emitter is moved, this is where it updates self.pos.'''
-		if pos != None: 
-			self.pos = Vector2(pos)
 		
-		self.delta = delta + 1
+		"""updates values for pos and velocity. New and Old values used for interpolation between the two values."""
+		self.oldPos = self.newPos
+		self.oldVelo = self.newVelo
+		self.newVelo = velo
+		'''if the particle emitter is moved, this is where it updates self.pos.'''
+		if pos != None:
+			self.newPos = Vector2(pos)
+
+		self.delta = 1 - delta
 
 		'''New particles are set up here. If the maximum particles has been reached, no new particles will be added.
 		   ppf can be changed and adjusted when inputed into this function, allowing for better functionality of use.'''
@@ -798,7 +807,12 @@ class ParticleEmitter:
 			for i in range(math.floor(self.particleSpawns)):
 				self.particleSpawns -= 1
 				if not len(self.particleList) >= self.maxParticles:
-					self.particleList.append(Particle(Vector2(0, 0), velo, self.pos, self.particleLifetime, self.initAttributes, self.color, self.size,	self.maxVelo, self.maxVeloAdjust, self.veloType))
+					"""Actual interpolation math for velo and pos."""
+					percent = randfloat(0, 1)
+					pos = self.oldPos + percent * (self.newPos - self.oldPos)
+					velo = self.oldVelo + percent * (self.newVelo - self.oldVelo)
+
+					self.particleList.append(Particle(Vector2(0, 0), velo, pos, self.particleLifetime, self.initAttributes, self.color, self.size,	self.maxVelo, self.maxVeloAdjust, self.veloType))
 		
 		'''Determines how many particles are spawned and then calls the function to spawn particles.'''
 		if self.spawnType == "default": #spawns particles without considering the emitter's velocity
@@ -820,12 +834,18 @@ class ParticleEmitter:
 
 
 		'''loops through and updates all particles in the list.'''
-		for i in range(len(self.particleList)-1, 0, -1):
+		for i in range(len(self.particleList)-1, -1, -1):
 			'''updates the particles and passes the update attributes.'''
 			self.particleList[i].update(screen, self.updateAttributes, delta = self.delta, emitterPos = self.pos)
 			'''removes the particles if they aren't on screen, or if their lifetime has run out.'''
 			'''the collide rect is set to the screen, adjusted for the size of the particle'''
 			currentParticle = self.particleList[i]
-			collideRect = Rect(SCREEN_RECT.x - currentParticle.size, SCREEN_RECT.y - currentParticle.size, SCREEN_RECT.w + (currentParticle.size * 2), SCREEN_RECT.h + (currentParticle.size * 2))
-			if (self.particleList[i].time == 0) or (currentParticle.delete) or (type(self.cull) == bool and (not collideRect.collidepoint(currentParticle.pos) and self.cull)) or (type(self.cull) == list and ((currentParticle.pos.y + currentParticle.size < 0 and self.cull[0]) or (currentParticle.pos.x - currentParticle.size > SCREEN_SIZE[0] and self.cull[2]) or (currentParticle.pos.y - currentParticle.size > SCREEN_SIZE[1] and self.cull[3]) or (currentParticle.pos.x + currentParticle.size < 0 and self.cull[1]))):
+			collideRect = Rect(gb.SCREEN_RECT.x - currentParticle.size, gb.SCREEN_RECT.y - currentParticle.size, gb.SCREEN_RECT.w + (currentParticle.size * 2), gb.SCREEN_RECT.h + (currentParticle.size * 2))
+			if (self.particleList[i].time == 0) or (currentParticle.delete) or (type(self.cull) == bool and (not collideRect.collidepoint(currentParticle.pos) and self.cull)) or (type(self.cull) == list and ((currentParticle.pos.y + currentParticle.size < 0 and self.cull[0]) or (currentParticle.pos.x - currentParticle.size > gb.SCREEN_SIZE[0] and self.cull[2]) or (currentParticle.pos.y - currentParticle.size > gb.SCREEN_SIZE[1] and self.cull[3]) or (currentParticle.pos.x + currentParticle.size < 0 and self.cull[1]))):
 				del self.particleList[i]
+
+		# for particle in self.particleList:
+		# 	particle.update(screen, self.updateAttributes, delta = self.delta, emitterPos = self.pos)
+
+		for particle in self.particleList:
+			particle.draw(screen)
