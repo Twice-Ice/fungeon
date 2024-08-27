@@ -29,132 +29,7 @@ def randfloat(min, max):
 
 	return random.randint(minVal, maxVal)/scale
 
-class Particle:
-	'''
-	- pos
-	- lifetime of particle
-	- attributes for init
-	- color of particle
-	- size of particle
-
-	Velo is set by default, but it can be updated and changed to different values within the attributes of the particle init.
-	'''
-	def __init__(self, pos : Vector2 = Vector2(0, 0), velo : Vector2 = Vector2(0, 0), emitterPos : Vector2 = Vector2(100, 100), time : int = 100, attributes : list = [], color : tuple = (255, 255, 255), size : float = 5.0, maxVelo : Vector2 = Vector2(100, 100), maxVeloAdjust : list = [-5, 5], veloType : str = "avg"):
-		self.pos = pos + emitterPos
-		self.velo = Vector2(0, 0) - velo/2
-		self.color = color
-		self.initColor = color
-		self.time = time
-		self.lifetime = time
-		self.emitterPos = emitterPos
-		self.size = size
-		self.initSize = size
-		self.angle = 0
-		self.delta = 1
-		self.maxVelo = maxVelo
-		self.maxVeloAdjust = maxVeloAdjust
-		self.delete = False
-		self.veloType = veloType
-		self.applyAttributes(attributes)
-
-	# MAIN FUNCTIONS
-
-	'''
-	- screen to draw on
-	- position of the emitter (in order to draw correctly.)
-	- attributes of the particle upon updating.
-
-	updates particles.
-	'''
-	def update(self, screen, attributes, emitterPos, delta, velo : Vector2 = Vector2(0, 0)):
-		self.time -= 1 #reduces the lifetime of the particle. This should probably be set to delta and adjusted by irl time instead of frame time but whatever.
-		self.delta = delta #updates local deltatime for the particle.
-		self.emitterPos = emitterPos #updates the emitter's position.
-		#distance values shouldn't have to be the same as emitterPos, and instead should be handled slightly differently.
-		self.velo += velo #adds the velo of the emitter.
-		self.applyAttributes(attributes) #applies attributes.
-		self.updatePos() #updates the position of the particle based on self.velo.
-		# self.draw(screen) #draws the particle to the screen.
-
-	'''
-	applies the attributes to the particle based on the list inputed to this function.
-	this can be expanded and optimized.
-	a dict would probably be best.
-	'''
-	def applyAttributes(self, attributes):
-		attributeFunctions = {
-			"randYVelo" : self.randYVelo,
-			"randXVelo" : self.randXVelo,
-			"randVelo" : self.randVelo,
-			"gravity" : self.gravity,
-			"randAngle" : self.randAngle,
-			"moveOnAngle" : self.moveOnAngle,
-			"drag" : self.drag,
-			"dragOverLife" : self.dragOverLife,
-			#could have all size functions (except for randSize) have size be relative to the init size if relativeSize var == True?
-			#could also have size values passed as None and then they would just be treated as the current size value.
-			"randSize" : self.randSize,
-			"randAdjustSize" : self.randAdjustSize, #could add it so that it's min and max are relative to your init size.
-			"sizeOverLife" : self.sizeOverLife,
-			"sizeOverDistance" : self.sizeOverDistance,
-			"sizeOverVelo" : self.sizeOverVelo,
-			"randColor" : self.randColor,
-			"randAdjustColor" : self.randAdjustColor, #could add it so that it's min and max (along side (0, 0, 0), and (255, 255, 255)) are relative to init color.
-			#could have all color functions be relative to the init color if relativeColor var == True?
-			"colorOverLife" : self.colorOverLife,
-			"colorOverDistance" : self.colorOverDistance,
-			"colorOverVelo" : self.colorOverVelo,
-			"deleteOnColor" : self.deleteOnColor,
-			"deleteOnVelo" : self.deleteOnVelo,
-			"deleteOnSize" : self.deleteOnSize,
-			"deleteOnDistance" : self.deleteOnDistance,
-			}
-		defaultSettings = {
-			"randYVelo" : 5,
-			"randXVelo" : 5,
-			"randVelo" : 5,
-			"gravity" : .25,
-			"randAngle" : [0, 360],
-			"moveOnAngle" : 5,
-			"drag" : [.15, .2],
-			"dragOverLife" : [.15, .2, .5, 1, 5],
-			"randSize" : 10,
-			"randAdjustSize" : [2, [3, 10]],
-			"sizeOverLife" : [1, 10, 5, 10, 1],
-			"sizeOverDistance" : [100, [1, 10, 5, 10, 1]],
-			"sizeOverVelo" : [10, [1, 15]],
-			"randColor" : (255, 255, 255),
-			"randAdjustColor" : [10, [(0, 0, 0), (255, 255, 255)]],
-			"colorOverLife" : [(255, 255, 255), (0, 0, 0)],
-			"colorOverDistance" : [100, [(0, 0, 0), (255, 255, 255)]],
-			"colorOverVelo" : [self.maxVelo.x if self.maxVelo.x > self.maxVelo.y else self.maxVelo.y, [(0, 0, 0), (255, 255, 255)]],
-			"deleteOnColor" : (0, 0, 0),
-			"deleteOnVelo" : 0,
-			"deleteOnSize" : 0,
-			"deleteOnDistance" : 100,
-		}
-		for i in range(len(attributes)):
-			default = attributes[i][1] if len(attributes[i]) > 1 else defaultSettings[attributes[i][0]]
-			attributeFunctions[attributes[i][0]](default)
-	
-	'''
-	draws the particle relative to the particle emitter.
-	'''
-	def draw(self, screen):
-		pygame.draw.circle(screen, self.color, self.pos, math.floor(self.size))
-
-	'''
-	updates the position of the particle based on it's velo.
-	velocity is capped here based on maxVelo.
-	
-	a random adjust is applied when maxVelo is reached to avoid clumping. This can be changed by settings maxVeloAdjust in the emitter init. By default, it is set to 5.
-	'''
-	def updatePos(self):
-		#the velocities are capped, but also have an added random value to avoid clumping if a large selection of particles all exeed maxVelo.
-		if abs(self.velo.x) > self.maxVelo.x: self.velo.x = (self.maxVelo.x) * (self.velo.x/abs(self.velo.x)) + randfloat(self.maxVeloAdjust[0], self.maxVeloAdjust[1])
-		if abs(self.velo.y) > self.maxVelo.y: self.velo.y = (self.maxVelo.y) * (self.velo.y/abs(self.velo.y)) + randfloat(self.maxVeloAdjust[0], self.maxVeloAdjust[1])
-		self.pos += self.velo * self.delta
-
+class ParticleSettings:
 	# HELPER FUNCTIONS
 
 	'''
@@ -735,6 +610,132 @@ class Particle:
 		dragPercent = 1 - self.time/self.lifetime
 		currentDrag = dragRange[int(gb.halfRound(dragPercent - dragPercent % (100/len(dragRange)/100), 2)//(100/len(dragRange)/100))]
 		self.drag(currentDrag)
+
+class Particle(ParticleSettings):
+	'''
+	- pos
+	- lifetime of particle
+	- attributes for init
+	- color of particle
+	- size of particle
+
+	Velo is set by default, but it can be updated and changed to different values within the attributes of the particle init.
+	'''
+	def __init__(self, pos : Vector2 = Vector2(0, 0), velo : Vector2 = Vector2(0, 0), emitterPos : Vector2 = Vector2(100, 100), time : int = 100, attributes : list = [], color : tuple = (255, 255, 255), size : float = 5.0, maxVelo : Vector2 = Vector2(100, 100), maxVeloAdjust : list = [-5, 5], veloType : str = "avg"):
+		self.pos = pos + emitterPos
+		self.velo = Vector2(0, 0) - velo/2
+		self.color = color
+		self.initColor = color
+		self.time = time
+		self.lifetime = time
+		self.emitterPos = emitterPos
+		self.size = size
+		self.initSize = size
+		self.angle = 0
+		self.delta = 1
+		self.maxVelo = maxVelo
+		self.maxVeloAdjust = maxVeloAdjust
+		self.delete = False
+		self.veloType = veloType
+		self.applyAttributes(attributes)
+
+	# MAIN FUNCTIONS
+
+	'''
+	- screen to draw on
+	- position of the emitter (in order to draw correctly.)
+	- attributes of the particle upon updating.
+
+	updates particles.
+	'''
+	def update(self, screen, attributes, emitterPos, delta, velo : Vector2 = Vector2(0, 0)):
+		self.time -= 1 #reduces the lifetime of the particle. This should probably be set to delta and adjusted by irl time instead of frame time but whatever.
+		self.delta = delta #updates local deltatime for the particle.
+		self.emitterPos = emitterPos #updates the emitter's position.
+		#distance values shouldn't have to be the same as emitterPos, and instead should be handled slightly differently.
+		self.velo += velo #adds the velo of the emitter.
+		self.applyAttributes(attributes) #applies attributes.
+		self.updatePos() #updates the position of the particle based on self.velo.
+		# self.draw(screen) #draws the particle to the screen.
+
+	'''
+	applies the attributes to the particle based on the list inputed to this function.
+	this can be expanded and optimized.
+	a dict would probably be best.
+	'''
+	def applyAttributes(self, attributes):
+		attributeFunctions = {
+			"randYVelo" : self.randYVelo,
+			"randXVelo" : self.randXVelo,
+			"randVelo" : self.randVelo,
+			"gravity" : self.gravity,
+			"randAngle" : self.randAngle,
+			"moveOnAngle" : self.moveOnAngle,
+			"drag" : self.drag,
+			"dragOverLife" : self.dragOverLife,
+			#could have all size functions (except for randSize) have size be relative to the init size if relativeSize var == True?
+			#could also have size values passed as None and then they would just be treated as the current size value.
+			"randSize" : self.randSize,
+			"randAdjustSize" : self.randAdjustSize, #could add it so that it's min and max are relative to your init size.
+			"sizeOverLife" : self.sizeOverLife,
+			"sizeOverDistance" : self.sizeOverDistance,
+			"sizeOverVelo" : self.sizeOverVelo,
+			"randColor" : self.randColor,
+			"randAdjustColor" : self.randAdjustColor, #could add it so that it's min and max (along side (0, 0, 0), and (255, 255, 255)) are relative to init color.
+			#could have all color functions be relative to the init color if relativeColor var == True?
+			"colorOverLife" : self.colorOverLife,
+			"colorOverDistance" : self.colorOverDistance,
+			"colorOverVelo" : self.colorOverVelo,
+			"deleteOnColor" : self.deleteOnColor,
+			"deleteOnVelo" : self.deleteOnVelo,
+			"deleteOnSize" : self.deleteOnSize,
+			"deleteOnDistance" : self.deleteOnDistance,
+			}
+		defaultSettings = {
+			"randYVelo" : 5,
+			"randXVelo" : 5,
+			"randVelo" : 5,
+			"gravity" : .25,
+			"randAngle" : [0, 360],
+			"moveOnAngle" : 5,
+			"drag" : [.15, .2],
+			"dragOverLife" : [.15, .2, .5, 1, 5],
+			"randSize" : 10,
+			"randAdjustSize" : [2, [3, 10]],
+			"sizeOverLife" : [1, 10, 5, 10, 1],
+			"sizeOverDistance" : [100, [1, 10, 5, 10, 1]],
+			"sizeOverVelo" : [10, [1, 15]],
+			"randColor" : (255, 255, 255),
+			"randAdjustColor" : [10, [(0, 0, 0), (255, 255, 255)]],
+			"colorOverLife" : [(255, 255, 255), (0, 0, 0)],
+			"colorOverDistance" : [100, [(0, 0, 0), (255, 255, 255)]],
+			"colorOverVelo" : [self.maxVelo.x if self.maxVelo.x > self.maxVelo.y else self.maxVelo.y, [(0, 0, 0), (255, 255, 255)]],
+			"deleteOnColor" : (0, 0, 0),
+			"deleteOnVelo" : 0,
+			"deleteOnSize" : 0,
+			"deleteOnDistance" : 100,
+		}
+		for i in range(len(attributes)):
+			default = attributes[i][1] if len(attributes[i]) > 1 else defaultSettings[attributes[i][0]]
+			attributeFunctions[attributes[i][0]](default)
+	
+	'''
+	draws the particle relative to the particle emitter.
+	'''
+	def draw(self, screen):
+		pygame.draw.circle(screen, self.color, self.pos, math.floor(self.size))
+
+	'''
+	updates the position of the particle based on it's velo.
+	velocity is capped here based on maxVelo.
+	
+	a random adjust is applied when maxVelo is reached to avoid clumping. This can be changed by settings maxVeloAdjust in the emitter init. By default, it is set to 5.
+	'''
+	def updatePos(self):
+		#the velocities are capped, but also have an added random value to avoid clumping if a large selection of particles all exeed maxVelo.
+		if abs(self.velo.x) > self.maxVelo.x: self.velo.x = (self.maxVelo.x) * (self.velo.x/abs(self.velo.x)) + randfloat(self.maxVeloAdjust[0], self.maxVeloAdjust[1])
+		if abs(self.velo.y) > self.maxVelo.y: self.velo.y = (self.maxVelo.y) * (self.velo.y/abs(self.velo.y)) + randfloat(self.maxVeloAdjust[0], self.maxVeloAdjust[1])
+		self.pos += self.velo * self.delta
 
 class ParticleEmitter:
 	'''
