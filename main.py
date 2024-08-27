@@ -1,4 +1,6 @@
 import pygame
+for i in range(0, 10):
+	print()
 from pygame import Vector2
 from particles import ParticleEmitter
 import globals as gb
