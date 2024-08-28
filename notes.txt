@@ -7,3 +7,7 @@
 - could have all settings defined in the init of the particles instead of every time the particle is updated.
 - condensed the drag function, and got rid of minVelo as a setting and have it now just as pow*1.25
 - drag can now take in different x and y values.
+
+- wanna make it so that the cull box can be edited with a range that either reduces or increases the size of the box.
+- getting threading to be smoother, possibly with interpolation of the movement between updates.
+- properly set up delta time

@@ -22,8 +22,8 @@ fireFade = ParticleEmitter(
 	],
 	initAttributes = [
 		["randAngle"],
-		["moveOnAngle", 20],
-		["randVelo", 15]
+		["moveOnAngle", 1500],
+		["randVelo", 900]
 	],
 	maxVelo = 15,
 	maxVeloAdjust = 5,
@@ -31,7 +31,9 @@ fireFade = ParticleEmitter(
 	ppf = 7.5*2,
 	particleLifetime = 1000,
 	spawnType = "onMove",
-	ppfMaxVelo = 2.5
+	ppfMaxVelo = 2.5,
+	threaded = True,
+	maxThreads = 50
 )
 
 transLight = ParticleEmitter(
@@ -111,21 +113,45 @@ testEmitter = ParticleEmitter(
 	ppf = 10,
 	maxParticles = 1000,
 	updateAttributes = [
-		["randColor", [None, "color"]]
+		# ["randColor", [None, "color"]]
 	],
 	initAttributes = [
 		["randAngle"],
 		["moveOnAngle", 20],
 	],
 	maxVelo = Vector2(20, 20),
+	threaded=False
 )
+
+class TextDisplay:
+	def __init__(self, text, x, y, font = None):
+		if text == None: text = ""
+		self.text = text
+		self.x = x
+		self.y = y
+		self.font = font #not set up. don't use different fonts.
+
+	def update(self, screen, text = "None"):
+		if not text == "None":
+			self.text = text
+		font = pygame.font.Font(None, 74)
+		renderedText = font.render(str(self.text), 1, (255, 255, 255))
+		screen.blit(renderedText, (self.x, self.y))
+
+fps = TextDisplay("", 10, 10)
+numOfParticles = TextDisplay("", 10, 20+74)
 
 while not doExit:
 	delta = clock.tick(gb.FPS) / 1000
+	
+	# print(clock.get_fps(), fireFade.numOfParticles)
+
 	for event in pygame.event.get():
 		if event.type == pygame.QUIT:
 			doExit = True #lets you quit parogram
 	screen.fill((0, 0, 0))
+	fps.update(screen, f"{int(clock.get_fps())}")
+	numOfParticles.update(screen, f"{fireFade.numOfParticles}")
 
 	# testEmitter.update(screen, delta, pos = pygame.mouse.get_pos(), velo = -Vector2(pygame.mouse.get_rel())/7.5)
 	# transLight.update(screen, delta, pos = pygame.mouse.get_pos(), velo = -Vector2(pygame.mouse.get_rel())/7.5)

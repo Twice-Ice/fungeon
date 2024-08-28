@@ -1,4 +1,4 @@
-import pygame, math, random, threading, queue
+import pygame, math, random, threading, queue, time
 from pygame import Vector2, Rect
 import globals as gb
 
@@ -75,7 +75,7 @@ class ParticleSettings:
 	the actual del call is within the emitter when cycling through the list.
 	'''
 	def deleteParticle(self):
-		self.delete = True
+		self.active = False
 	
 	'''
 	- color1
@@ -630,10 +630,11 @@ class Particle(ParticleSettings):
 		self.size = size
 		self.initSize = size
 		self.angle = 0
-		self.delta = 1
+		self.delta = gb.FPS/1000
 		self.maxVelo = maxVelo
 		self.maxVeloAdjust = maxVeloAdjust
-		self.delete = False
+		self.active = True
+		self.cull = False
 		self.veloType = veloType
 
 		self.attributeFunctions = {
@@ -687,9 +688,13 @@ class Particle(ParticleSettings):
 			"deleteOnSize" : 0,
 			"deleteOnDistance" : 100,
 		}
-		self.attributes = initAttributes
-		self.applyAttributes()
+		self.applyAttributes(initAttributes)
 		self.attributes = updateAttributes
+		colorAttributeList = []
+		for attribute in self.attributes:
+			if "color" in attribute[0].lower():
+				colorAttributeList.append(attribute)
+		self.applyAttributes(colorAttributeList)
 
 	# MAIN FUNCTIONS
 
@@ -700,16 +705,6 @@ class Particle(ParticleSettings):
 
 	updates particles.
 	'''
-	# def update(self, screen, attributes, emitterPos, delta, velo : Vector2 = Vector2(0, 0)):
-	# 	self.time -= 1 #reduces the lifetime of the particle. This should probably be set to delta and adjusted by irl time instead of frame time but whatever.
-	# 	self.delta = delta #updates local deltatime for the particle.
-	# 	self.emitterPos = emitterPos #updates the emitter's position.
-	# 	#distance values shouldn't have to be the same as emitterPos, and instead should be handled slightly differently.
-	# 	self.velo += velo #adds the velo of the emitter.
-	# 	self.applyAttributes(attributes) #applies attributes.
-	# 	self.updatePos() #updates the position of the particle based on self.velo.
-	# 	# self.draw(screen) #draws the particle to the screen.
-
 	def updateData(self, 
 			   delta : float, 
 			   emitterPos : Vector2|tuple = (0, 0), 
@@ -717,18 +712,36 @@ class Particle(ParticleSettings):
 		self.time -= 1
 		self.delta = delta
 		self.emitterPos = Vector2(emitterPos)
-		self.velo += Vector2(velo)
+		# self.velo += Vector2(velo)
 		self.applyAttributes()
 		self.updatePos()
+		self.checkDead()
+
+	def checkDead(self):
+		"""
+			Checks if the particle has met any requirements to be dead.
+		"""
+		if self.time == 0:
+			self.active = False
+
+		def sumSizes(*tuples):
+			"""for adding up the sizes of the cull rect"""
+			return tuple(sum(x) for x in zip(*tuples))
+		
+		cullRect = Rect(sumSizes((-self.size, -self.size, self.size, self.size), (0, 0, gb.SCREEN_SIZE[0], gb.SCREEN_SIZE[1])))
+
+		if cullRect.collidepoint(self.pos.x, self.pos.y) == False:
+			self.active = False
 
 	'''
 	applies the attributes to the particle based on the settings defined in the list self.attributes at init.
 	'''
-	def applyAttributes(self):
-		for i in range(len(self.attributes)):
-			default = self.attributes[i][1] if len(self.attributes[i]) > 1 else self.defaultSettings[self.attributes[i][0]]
-			self.attributeFunctions[self.attributes[i][0]](default)
-			# print(f"{self.attributeFunctions[self.attributes[i][0]]}, ({default})")
+	def applyAttributes(self, attributes : list = None):
+		if attributes == None:
+			attributes = self.attributes
+		for i in range(len(attributes)):
+			default = attributes[i][1] if len(attributes[i]) > 1 else self.defaultSettings[attributes[i][0]]
+			self.attributeFunctions[attributes[i][0]](default)
 	
 	'''
 	draws the particle relative to the particle emitter.
@@ -743,14 +756,13 @@ class Particle(ParticleSettings):
 	a random adjust is applied when maxVelo is reached to avoid clumping. This can be changed by settings maxVeloAdjust in the emitter init. By default, it is set to 5.
 	'''
 	def updatePos(self):
-		oldPos = self.pos
 		#the velocities are capped, but also have an added random value to avoid clumping if a large selection of particles all exeed maxVelo.
 		if abs(self.velo.x) > self.maxVelo.x: self.velo.x = (self.maxVelo.x) * (self.velo.x/abs(self.velo.x)) + randfloat(self.maxVeloAdjust[0], self.maxVeloAdjust[1])
 		if abs(self.velo.y) > self.maxVelo.y: self.velo.y = (self.maxVelo.y) * (self.velo.y/abs(self.velo.y)) + randfloat(self.maxVeloAdjust[0], self.maxVeloAdjust[1])
 		self.pos += self.velo * self.delta
-		# print(f"{oldPos}, {self.pos}, {self.velo * self.delta}")
 
 class LimitedList:
+	"""A little class to contain lists, and the maximum size that the list should be. Used when threading."""
 	def __init__(self, size):
 		self.size = size
 		self.list = []
@@ -760,17 +772,27 @@ class ParticleEmitter:
 	Attribute list:
 		please check the wiki or refer to the def of applyAttributes.
 	'''
-	def __init__(self, pos = Vector2(0, 0), updateAttributes : list = [["randXVelo", 5], ["gravity", .25], ["colorOverLife", [(255, 255, 255), (255, 255, 255), (0, 0, 0)]]], initAttributes : list = [], maxParticles : int = 100, ppf : float = 1, particleLifetime : int = 100, color : tuple = (255, 255, 255), size : float = 10, maxVelo = Vector2(100, 150), maxVeloAdjust = 5, cull : bool = True, veloType : str = "avg", spawnOnMove = False, spawnType = "default", ppfMaxVelo : int = None): #ppf = particles per frame
+	def __init__(self, 
+				 pos = Vector2(0, 0), 
+				 updateAttributes : list = [["randXVelo", 5], ["gravity", .25], ["colorOverLife", [(255, 255, 255), (255, 255, 255), (0, 0, 0)]]], 
+				 initAttributes : list = [], 
+				 maxParticles : int = 100, 
+				 ppf : float = 1, 
+				 particleLifetime : int = 100, 
+				 color : tuple = (255, 255, 255), 
+				 size : float = 10, 
+				 maxVelo = Vector2(100, 150), 
+				 maxVeloAdjust = 5, 
+				 cull : bool = True, 
+				 veloType : str = "avg", 
+				 spawnOnMove = False, 
+				 spawnType = "default", 
+				 ppfMaxVelo : int = None,
+				 threaded : bool = True,
+				 maxThreads : int = 24): #ppf = particles per frame
 		self.pos = pos
 		self.newPos = pos
 		self.oldPos = pos
-		
-		maxThreads = 24
-		self.maxParticles = maxParticles
-		#a list of lists with different sizes. They should all have the same space for particle but if there is a remainder, then the last list will have that remainder added to it's size.
-		self.particleListsList = [LimitedList(math.floor(maxParticles/maxThreads)) if i < maxThreads - 1 else LimitedList((math.floor(maxParticles/maxThreads)) + (maxParticles % maxThreads)) for i in range(maxThreads)]
-		self.numOfParticles = 0
-
 		self.basePpf = ppf
 		self.ppf = ppf
 		self.particleSpawns = 0
@@ -799,41 +821,58 @@ class ParticleEmitter:
 		else:
 			raise TypeError(f"type(maxVeloAdjust) != list, int or float. type(maxVeloAdjust) == {type(maxVeloAdjust)}")
 		self.cull = cull
-		self.dataQueue = queue.Queue()
 
-		self.threads = []
-		for i in range(maxThreads):
-			thread = threading.Thread(target = self.updateParticle, args=(self.particleListsList[i].list,))
-			thread.start()
-			self.threads.append(thread)
+		self.maxParticles = maxParticles
+		self.numOfParticles = 0
+		self.threaded = threaded
+		if self.threaded:
+			#a list of lists with different sizes. They should all have the same space for particle but if there is a remainder, then the last list will have that remainder added to it's size.
+			self.particles = [LimitedList(math.floor(maxParticles/maxThreads)) if i < maxThreads - 1 else LimitedList((math.floor(maxParticles/maxThreads)) + (maxParticles % maxThreads)) for i in range(maxThreads)]
 
-	def updateParticle(self, particles):
-		delta = .01
+			self.dataQueue = queue.Queue()
+			
+			#sets up threads
+			self.threads = []
+			for i in range(maxThreads):
+				thread = threading.Thread(target = self.updateParticle, args=(self.particles[i].list,))
+				thread.start()
+				self.threads.append(thread)
+		else:
+			#if not threading no complicated lists needed!
+			self.particles = []
+
+	def updateParticle(self, particles): 
+		"""Function used when threading and updating particles"""
+		delta = gb.FPS/1000
+		emitterPos = Vector2(-100, -100)
+		velo = Vector2(0, 0)
 		while True:
 			if not self.dataQueue.empty():
 				data = self.dataQueue.get()
-				delta = data[0]
+				delta = data[0] * 3
 				emitterPos = data[1]
 				velo = data[2]
-				for particle in particles:
-					particle.updateData(delta, emitterPos, velo)
 
-			pygame.time.wait(int(delta*1000))
+			for particle in particles:
+				particle.updateData(delta, emitterPos)
 
-	'''
-	- screen
-	- delta
-	- pos
-	- velo
-	[screen is the screen to draw to.]
-	[delta is deltatime. (fps/1000)]
-	[pos is the position of where you want the emitter to be. If the pos is attached to a player for example, set pos as "player.pos" (or whatever your pos variable is named.)]
-	[velo is the velocity of whatever your emitter is attached to/impacted by. This is very sensitive, so be careful to not apply too much force here.]
+			time.sleep(delta)
 
-	Updates the emitter and every particle from the emitter. 
-	'''
 	def update(self, screen, delta : int = 1, pos = None, velo : Vector2 = Vector2(0, 0)):
+		'''
+			- screen
+			- delta
+			- pos
+			- velo
+			[screen is the screen to draw to.]
+			[delta is deltatime. (fps/1000)]
+			[pos is the position of where you want the emitter to be. If the pos is attached to a player for example, set pos as "player.pos" (or whatever your pos variable is named.)]
+			[velo is the velocity of whatever your emitter is attached to/impacted by. This is very sensitive, so be careful to not apply too much force here.]
+
+			Updates the emitter and every particle from the emitter. 
+		'''
 		
+		self.delta = delta
 		"""updates values for pos and velocity. New and Old values used for interpolation between the two values."""
 		self.oldPos = self.newPos
 		self.oldVelo = self.newVelo
@@ -841,8 +880,6 @@ class ParticleEmitter:
 		'''if the particle emitter is moved, this is where it updates self.pos.'''
 		if pos != None:
 			self.newPos = Vector2(pos)
-
-		self.delta = 1 - delta
 
 		'''New particles are set up here. If the maximum particles has been reached, no new particles will be added.
 		   ppf can be changed and adjusted when inputed into this function, allowing for better functionality of use.'''
@@ -857,18 +894,31 @@ class ParticleEmitter:
 					pos = self.oldPos + percent * (self.newPos - self.oldPos)
 					velo = self.oldVelo + percent * (self.newVelo - self.oldVelo)
 
-					spawnedParticle = False
-					while not spawnedParticle:
-						if len(self.particleListsList[listIndex].list) <= self.particleListsList[listIndex].size:
-							self.particleListsList[listIndex].list.append(Particle(Vector2(0, 0), velo, pos, self.particleLifetime, self.initAttributes, self.updateAttributes, self.color, self.size,	self.maxVelo, self.maxVeloAdjust, self.veloType))
-							listIndex += 1
-							self.numOfParticles += 1
-							spawnedParticle = True
-						else:
-							listIndex += 1
-						
-						if listIndex >= len(self.particleListsList):
-							listIndex = 0
+					if self.threaded:
+						"""
+							If threaded, the particles are put into one of the lists that contains particles.
+							Since we keep track of the number of active particles, there's no need to calculate it from all of the lists.
+							We use a listIndex to keep track of which list we are on and appending the new particle into.
+						"""
+						spawnedParticle = False #used to make sure we don't get stuck in the while loop
+						while not spawnedParticle:
+							if len(self.particles[listIndex].list) <= self.particles[listIndex].size:
+								self.particles[listIndex].list.append(Particle(Vector2(0, 0), velo, pos, self.particleLifetime, self.initAttributes, self.updateAttributes, self.color, self.size,	self.maxVelo, self.maxVeloAdjust, self.veloType))
+								listIndex += 1
+								self.numOfParticles += 1
+								spawnedParticle = True
+							else:
+								listIndex += 1
+							
+							#so we don't check for lists that aren't there. (ie. checking for a list at index 10 when the last list was at index 8.)
+							if listIndex >= len(self.particles):
+								listIndex = 0
+					else:
+						"""
+							If not threaded, we still keep track of the number of particles, but we can just append the particle on its own.
+						"""
+						self.particles.append(Particle(Vector2(0, 0), velo, pos, self.particleLifetime, self.initAttributes, self.updateAttributes, self.color, self.size,	self.maxVelo, self.maxVeloAdjust, self.veloType))
+						self.numOfParticles += 1
 
 		'''Determines how many particles are spawned and then calls the function to spawn particles.'''
 		if self.spawnType == "default": #spawns particles without considering the emitter's velocity
@@ -888,22 +938,27 @@ class ParticleEmitter:
 
 			spawnParticles(self.basePpf*percent)
 
-		self.dataQueue.put([delta, pos, velo])
+		if self.threaded:
+			"""update data in queue for particles"""
+			self.dataQueue.put([delta, pos, velo])
 
-		# '''loops through and updates all particles in the list.'''
-		# for i in range(len(self.particleList)-1, -1, -1):
-			# '''updates the particles and passes the update attributes.'''
-			# self.particleList[i].update(screen, self.updateAttributes, delta = self.delta, emitterPos = self.pos)
-			# '''removes the particles if they aren't on screen, or if their lifetime has run out.'''
-			# '''the collide rect is set to the screen, adjusted for the size of the particle'''
-			# currentParticle = self.particleList[i]
-			# collideRect = Rect(gb.SCREEN_RECT.x - currentParticle.size, gb.SCREEN_RECT.y - currentParticle.size, gb.SCREEN_RECT.w + (currentParticle.size * 2), gb.SCREEN_RECT.h + (currentParticle.size * 2))
-			# if (self.particleList[i].time == 0) or (currentParticle.delete) or (type(self.cull) == bool and (not collideRect.collidepoint(currentParticle.pos) and self.cull)) or (type(self.cull) == list and ((currentParticle.pos.y + currentParticle.size < 0 and self.cull[0]) or (currentParticle.pos.x - currentParticle.size > gb.SCREEN_SIZE[0] and self.cull[2]) or (currentParticle.pos.y - currentParticle.size > gb.SCREEN_SIZE[1] and self.cull[3]) or (currentParticle.pos.x + currentParticle.size < 0 and self.cull[1]))):
-			# 	del self.particleList[i]
+			"""for each particle, check if it's active and if it is then draw. otherwise remove it."""
+			for limitedList in self.particles:
+				for particle in limitedList.list:
+					if particle.active == False:
+						self.numOfParticles -= 1
+						limitedList.list.remove(particle)
+						del particle
+					else:
+						particle.draw(screen)
+		else:
+			"""for each particle, update it, check if it's active and if it is then draw. otherwise remove it."""
+			for particle in self.particles:
+				particle.updateData(delta, pos, velo)
 
-		# for particle in self.particleList:
-		# 	particle.update(screen, self.updateAttributes, delta = self.delta, emitterPos = self.pos)
-
-		for limitedList in self.particleListsList:
-			for particle in limitedList.list:
-				particle.draw(screen)
+				if particle.active == False:
+					self.numOfParticles -= 1
+					self.particles.remove(particle)
+					del particle
+				else:
+					particle.draw(screen)
